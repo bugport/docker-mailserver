@@ -1,8 +1,34 @@
 NAME = tvial/docker-mailserver:testing
+COMPOSE_FILE = docker-compose.yml
 
 all: build-no-cache generate-accounts run fixtures tests clean
 all-fast: build generate-accounts run fixtures tests clean
 no-build: generate-accounts run fixtures tests clean
+
+# Docker Compose targets
+compose-build:
+	docker compose build
+
+compose-up:
+	docker compose up -d
+
+compose-down:
+	docker compose down
+
+compose-logs:
+	docker compose logs -f
+
+compose-restart:
+	docker compose restart
+
+compose-clean:
+	docker compose down -v --remove-orphans
+
+# Setup for docker-compose
+setup-compose: compose-build
+	cp .env.example .env
+	@echo "Please edit .env file with your configuration"
+	@echo "Then run: make compose-up"
 
 build-no-cache:
 	docker build --no-cache -t $(NAME) .

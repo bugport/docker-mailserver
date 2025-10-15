@@ -1,0 +1,13 @@
+# Override file for development
+version: '3.8'
+
+services:
+  mail:
+    environment:
+      - DMS_DEBUG=1
+    volumes:
+      # Mount logs for easier debugging
+      - ./logs:/var/log/mail
+    ports:
+      # Expose additional ports for debugging
+      - "8080:80"   # Optional web interface
