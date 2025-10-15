@@ -37,4 +37,6 @@ services:
       - "5232:5232"  # CalDAV/CardDAV (Radicale)
     volumes:
       - ./docker-data/caldav/collections:/var/lib/radicale/collections
+      # Mount Radicale configuration (config, users, rights)
+      - ./docker-data/caldav/config:/etc/radicale:ro
     restart: always

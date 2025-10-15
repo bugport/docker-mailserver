@@ -1,0 +1,14 @@
+# Rights file controlling access to collections
+# Docs: https://radicale.org/v3.html#rights
+
+[owner_only]
+# Logged-in user can fully manage their own address books/calendars
+user: .+
+collection: ^%(login)s/.*
+permissions: RW
+
+[public_read_only]
+# Anyone can read collections under "public/" (if you create such ones)
+user: .*
+collection: ^public/.*
+permissions: R

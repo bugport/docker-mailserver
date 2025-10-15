@@ -1,0 +1,5 @@
+# Example users file for Radicale htpasswd backend (bcrypt)
+# Generate a bcrypt hash (recommended):
+#   htpasswd -bnBC 12 "" 'your-password' | tr -d ':\n'
+# Then set a user like below (replace with your hash):
+# alice:$2b$12$REPLACE_WITH_BCRYPT_HASH

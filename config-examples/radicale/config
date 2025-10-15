@@ -1,0 +1,29 @@
+[server]
+# Listen on all interfaces and default Radicale port
+hosts = 0.0.0.0:5232
+# To enable TLS termination directly in Radicale (usually handled by a reverse proxy):
+# ssl = True
+# certificate = /etc/ssl/private/cert.pem
+# key = /etc/ssl/private/key.pem
+
+[auth]
+# Use an htpasswd-style users file for authentication
+# Generate bcrypt hashes (recommended)
+# Example: htpasswd -bnBC 12 "" 'your-password' | tr -d ':\n'
+type = htpasswd
+htpasswd_filename = /etc/radicale/users
+htpasswd_encryption = bcrypt
+
+[rights]
+# Only allow users to access their own collections by default
+# See rights file for details
+type = from_file
+file = /etc/radicale/rights
+
+[storage]
+# Persist collections to the mounted volume
+filesystem_folder = /var/lib/radicale/collections
+
+[logging]
+level = info
+mask_passwords = True
