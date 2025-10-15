@@ -1,0 +1,326 @@
+{
+  "name": "MTA LLM Filtration and Summarization",
+  "active": false,
+  "settings": {
+    "timezone": "UTC",
+    "saveExecutionProgress": true
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "triggerOnStart": true,
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        }
+      },
+      "id": "cron",
+      "name": "Cron",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 2.1,
+      "position": [
+        240,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "protocol": "imap",
+        "format": "simple",
+        "allowUnauthorizedCerts": true,
+        "downloadAttachments": false,
+        "options": {
+          "customOptions": {
+            "mailbox": "INBOX",
+            "fetchAllOnStart": false,
+            "ignoreTLS": false
+          }
+        }
+      },
+      "id": "imap",
+      "name": "Fetch Mail (IMAP)",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "credentials": {
+        "imap": {
+          "id": "IMAP_CREDENTIAL_ID",
+          "name": "Mailserver IMAP"
+        }
+      },
+      "position": [
+        480,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "documentationUrl": "https://api.openai.com/v1/moderations",
+        "authentication": "predefinedCredentialType",
+        "requestMethod": "POST",
+        "url": "https://api.openai.com/v1/moderations",
+        "jsonParameters": true,
+        "options": {},
+        "bodyParametersJson": "={ \n  model: 'omni-moderation-latest', \n  input: $json.text \n}"
+      },
+      "id": "moderate",
+      "name": "Moderate (OpenAI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "OPENAI_BEARER_TOKEN_ID",
+          "name": "OpenAI Bearer"
+        }
+      },
+      "position": [
+        740,
+        390
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Keep only what we need from the moderation response and preserve existing fields via merge later\nconst results = $json.results || [];\nlet flagged = false;\nlet categories = {};\nif (Array.isArray(results) && results.length) {\n  flagged = Boolean(results[0].flagged);\n  categories = results[0].categories || {};\n}\nreturn [{ json: { flagged, categories } }];"
+      },
+      "id": "parseModeration",
+      "name": "Parse Moderation",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        980,
+        390
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "mergeByPosition"
+      },
+      "id": "mergeEmailModeration",
+      "name": "Merge Email + Moderation",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        1230,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "booleans": [
+            {
+              "value1": "={{$json.flagged}}"
+            }
+          ]
+        }
+      },
+      "id": "ifFlagged",
+      "name": "Flagged?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1490,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "documentationUrl": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "requestMethod": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "jsonParameters": true,
+        "options": {},
+        "bodyParametersJson": "={\n  model: 'gpt-4o-mini',\n  temperature: 0.2,\n  messages: [\n    { role: 'system', content: 'You are an email summarizer for an admin inbox. Summarize in 5 bullet points with actionable items first. Include detected language and an urgency rating (low/med/high). If the email looks like spam, say so briefly.' },\n    { role: 'user', content: 'Subject: ' + ($json.subject || 'No subject') + \n      '\\nFrom: ' + ($json.from || '') + \n      '\\nTo: ' + ($json.to || '') + \n      '\\nDate: ' + ($json.date || '') + \n      '\\nBody: ' + ($json.text || '') }\n  ]\n}"
+      },
+      "id": "summarize",
+      "name": "Summarize (OpenAI Chat)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "OPENAI_BEARER_TOKEN_ID",
+          "name": "OpenAI Bearer"
+        }
+      },
+      "position": [
+        1770,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "mergeByPosition"
+      },
+      "id": "mergeEmailSummary",
+      "name": "Merge Email + Summary",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        2020,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@mail.example.com",
+        "toEmail": "admin@mail.example.com",
+        "subject": "Email Summary: ={{$json.subject || 'No subject'}}",
+        "text": "={{ ($json.choices && $json.choices[0] && $json.choices[0].message && $json.choices[0].message.content) ? $json.choices[0].message.content : JSON.stringify($json, null, 2) }}"
+      },
+      "id": "sendSummary",
+      "name": "Send Summary (SMTP)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "credentials": {
+        "smtp": {
+          "id": "SMTP_CREDENTIAL_ID",
+          "name": "Mailserver SMTP"
+        }
+      },
+      "position": [
+        2260,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@mail.example.com",
+        "toEmail": "abuse@mail.example.com",
+        "subject": "Flagged Email Detected: ={{$json.subject || 'No subject'}}",
+        "text": "={{ 'The following email was flagged by moderation.\\n\\nSubject: ' + ($json.subject || '') + '\\nFrom: ' + ($json.from || '') + '\\nDate: ' + ($json.date || '') + '\\nCategories: ' + JSON.stringify($json.categories || {}, null, 2) }}"
+      },
+      "id": "sendFlagged",
+      "name": "Send Flagged Notice (SMTP)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "credentials": {
+        "smtp": {
+          "id": "SMTP_CREDENTIAL_ID",
+          "name": "Mailserver SMTP"
+        }
+      },
+      "position": [
+        1770,
+        420
+      ]
+    }
+  ],
+  "connections": {
+    "Cron": {
+      "main": [
+        [
+          {
+            "node": "Fetch Mail (IMAP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Mail (IMAP)": {
+      "main": [
+        [
+          {
+            "node": "Merge Email + Moderation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Moderate (OpenAI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Moderate (OpenAI)": {
+      "main": [
+        [
+          {
+            "node": "Parse Moderation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Moderation": {
+      "main": [
+        [
+          {
+            "node": "Merge Email + Moderation",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Email + Moderation": {
+      "main": [
+        [
+          {
+            "node": "Flagged?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flagged?": {
+      "main": [
+        [
+          {
+            "node": "Summarize (OpenAI Chat)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Flagged Notice (SMTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize (OpenAI Chat)": {
+      "main": [
+        [
+          {
+            "node": "Merge Email + Summary",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Email + Summary": {
+      "main": [
+        [
+          {
+            "node": "Send Summary (SMTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "mainInput": [
+        [
+          {
+            "node": "Merge Email + Moderation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "staticData": {}
+}
