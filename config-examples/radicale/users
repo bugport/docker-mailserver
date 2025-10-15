@@ -1,0 +1,6 @@
+; Example users file for Radicale (htpasswd format with bcrypt)
+; Generate an entry (openssl alternative):
+;   docker run --rm alpine/openssl ash -c 'apk add --no-cache apache2-utils >/dev/null && htpasswd -bnBC 12 "" secret | tr -d ":\n"'
+; Replace secret with your password. Then create: username:hash
+;
+; alice:$2b$12$8JKC2... (bcrypt hash)

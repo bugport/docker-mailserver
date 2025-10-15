@@ -1,0 +1,141 @@
+#!/bin/bash
+
+set -euo pipefail
+
+# Optional: use DMS helper if available for consistent UX
+if [[ -f /usr/local/bin/helpers/index.sh ]]; then
+  # shellcheck disable=SC1091
+  source /usr/local/bin/helpers/index.sh
+  HAVE_HELPERS=1
+else
+  HAVE_HELPERS=0
+  # Minimal color fallbacks
+  PURPLE=""
+  RED=""
+  ORANGE=""
+  BLUE=""
+  LWHITE=""
+  YELLOW=""
+  RESET=""
+fi
+
+function __usage() {
+  cat <<USAGE
+${PURPLE}addcarddavuser${RED}(${YELLOW}8${RED})${RESET}
+
+${ORANGE}USAGE${RESET}
+    addcarddavuser <USERNAME> [<PASSWORD>] [--file <PATH>]
+
+${ORANGE}OPTIONS${RESET}
+    ${BLUE}Generic Program Information${RESET}
+        help       Print the usage information.
+
+${ORANGE}DESCRIPTION${RESET}
+    Create or update a Radicale CardDAV user with a bcrypt htpasswd entry.
+
+    The users file defaults to './docker-data/caldav/config/users' within the repo.
+    Override via '--file <PATH>' or env var 'CARDDAV_USERS_FILE'.
+
+    If PASSWORD is omitted, you will be prompted securely.
+
+${ORANGE}EXAMPLES${RESET}
+    ${LWHITE}addcarddavuser alice${RESET}
+        Prompt for a password and add/update 'alice'.
+
+    ${LWHITE}addcarddavuser alice s3cret --file /custom/path/users${RESET}
+        Add/update 'alice' in a custom users file path.
+USAGE
+}
+
+require_args() {
+  if [[ ${1:-0} -lt 1 ]]; then
+    __usage
+    exit 1
+  fi
+}
+
+prompt_secret_twice() {
+  local first second
+  read -r -s -p "Password: " first; echo
+  read -r -s -p "Confirm password: " second; echo
+  if [[ "$first" != "$second" ]]; then
+    echo "Passwords do not match" >&2
+    exit 1
+  fi
+  printf '%s' "$first"
+}
+
+# Resolve repository root (relative to script location)
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd -P)"
+
+main() {
+  if (( HAVE_HELPERS )); then
+    _require_n_parameters_or_print_usage 1 "${@}" || true
+  fi
+
+  local username password users_file
+  username=""
+  password=""
+  users_file="${CARDDAV_USERS_FILE:-${REPO_ROOT}/docker-data/caldav/config/users}"
+
+  # Parse args (simple)
+  if [[ ${1:-} == "help" || ${1:-} == "--help" || ${1:-} == "-h" ]]; then
+    __usage; exit 0
+  fi
+
+  require_args $#
+
+  username="$1"; shift || true
+
+  while (( $# > 0 )); do
+    case "$1" in
+      --file)
+        users_file="$2"; shift 2;;
+      *)
+        if [[ -z "$password" ]]; then
+          password="$1"; shift
+        else
+          echo "Unexpected argument: $1" >&2; exit 1
+        fi
+        ;;
+    esac
+  done
+
+  if [[ -z "$password" ]]; then
+    password="$(prompt_secret_twice)"
+  fi
+
+  mkdir -p "$(dirname -- "$users_file")"
+  touch "$users_file"
+
+  # Generate bcrypt hash using local htpasswd if available, otherwise via docker
+  local ht_line
+  if command -v htpasswd >/dev/null 2>&1; then
+    # -n: print, -B: bcrypt, -i: read password from stdin
+    ht_line=$(printf '%s' "$password" | htpasswd -niB "$username")
+  elif command -v docker >/dev/null 2>&1; then
+    ht_line=$(printf '%s' "$password" | docker run --rm -i httpd:2.4-alpine htpasswd -niB "$username")
+  else
+    echo "Neither 'htpasswd' nor 'docker' is available to generate bcrypt hashes." >&2
+    echo "Install apache2-utils (htpasswd) or Docker, then retry." >&2
+    exit 1
+  fi
+
+  # Update or append entry
+  if grep -qE "^${username}:" "$users_file"; then
+    # Replace existing line
+    # Use sed -i portable approach
+    tmp_file="${users_file}.tmp.$$"
+    sed -E "s|^${username}:[^
+]*|${ht_line}|" "$users_file" > "$tmp_file"
+    mv "$tmp_file" "$users_file"
+  else
+    printf '%s
+' "$ht_line" >> "$users_file"
+  fi
+
+  echo "Updated CardDAV user '${username}' in ${users_file}"
+}
+
+main "$@"

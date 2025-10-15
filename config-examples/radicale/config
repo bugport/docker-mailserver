@@ -1,0 +1,24 @@
+[server]
+# Bind to all interfaces, default 0.0.0.0 in container
+hosts = 0.0.0.0:5232
+
+[auth]
+# Use an htpasswd-style users file for authentication (recommended)
+type = htpasswd
+htpasswd_filename = /etc/radicale/users
+htpasswd_encryption = bcrypt
+
+[rights]
+# Only allow users to access their own collections via rights file
+type = from_file
+file = /etc/radicale/rights
+
+; No legacy shortcuts; use the sections above
+
+[storage]
+# Collections storage path (already mounted in compose)
+filesystem_folder = /var/lib/radicale/collections
+
+[logging]
+# Basic logging
+level = info
