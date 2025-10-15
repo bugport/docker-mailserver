@@ -1,24 +1,60 @@
-version: '2'
+version: '3.8'
 
 services:
   mail:
-    image: tvial/docker-mailserver:v2
-    hostname: mail
-    domainname: domain.com
+    image: tvial/docker-mailserver:latest
+    # Uncomment to build from local Dockerfile:
+    # build: .
+    hostname: ${HOSTNAME:-mail}
+    domainname: ${DOMAINNAME:-domain.com}
     container_name: mail
+    restart: unless-stopped
     ports:
-    - "25:25"
-    - "143:143"
-    - "587:587"
-    - "993:993"
+      - "25:25"     # SMTP
+      - "143:143"   # IMAP
+      - "587:587"   # SMTP Submission
+      - "993:993"   # IMAPS
+      - "110:110"   # POP3 (optional)
+      - "995:995"   # POP3S (optional)
+      - "4190:4190" # ManageSieve (optional)
     volumes:
-    - maildata:/var/mail
-    - ./config/:/tmp/docker-mailserver/
+      - maildata:/var/mail
+      - mailstate:/var/mail-state
+      - maillogs:/var/log/mail
+      - ./config/:/tmp/docker-mailserver/
+      - /etc/localtime:/etc/localtime:ro
     environment:
-    - ENABLE_FAIL2BAN=1
+      - ENABLE_FAIL2BAN=${ENABLE_FAIL2BAN:-1}
+      - ENABLE_MANAGESIEVE=${ENABLE_MANAGESIEVE:-0}
+      - ENABLE_POP3=${ENABLE_POP3:-0}
+      - ENABLE_FETCHMAIL=${ENABLE_FETCHMAIL:-0}
+      - SSL_TYPE=${SSL_TYPE:-self-signed}
+      - PERMIT_DOCKER=${PERMIT_DOCKER:-network}
+      - SA_TAG=${SA_TAG:-2.0}
+      - SA_TAG2=${SA_TAG2:-6.31}
+      - SA_KILL=${SA_KILL:-6.31}
+      - SMTP_ONLY=${SMTP_ONLY:-0}
+      - DMS_DEBUG=${DMS_DEBUG:-0}
+      - TZ=${TZ:-UTC}
     cap_add:
-    - NET_ADMIN
+      - NET_ADMIN
+    networks:
+      - mailserver
+    healthcheck:
+      test: ["CMD", "ss", "-lntp", "state", "listening"]
+      timeout: 3s
+      retries: 0
+      start_period: 40s
+      interval: 10s
+
+networks:
+  mailserver:
+    driver: bridge
 
 volumes:
   maildata:
+    driver: local
+  mailstate:
+    driver: local  
+  maillogs:
     driver: local

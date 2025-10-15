@@ -1,10 +1,11 @@
-FROM ubuntu:14.04
-MAINTAINER Thomas VIAL
+FROM ubuntu:22.04
+LABEL maintainer="Thomas VIAL"
 
 # Packages
 RUN DEBIAN_FRONTEND=noninteractive apt-get update -q --fix-missing && \
   apt-get -y upgrade && \
   apt-get -y install --no-install-recommends \
+    ca-certificates \
     amavisd-new \
     arj \
     bzip2 \
@@ -37,9 +38,6 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update -q --fix-missing && \
     spamassassin \
     unzip \
     && \
-  curl -sk http://neuro.debian.net/lists/trusty.de-m.libre > /etc/apt/sources.list.d/neurodebian.sources.list && \
-  apt-key adv --recv-keys --keyserver hkp://pgp.mit.edu:80 0xA5D32F012649A5A9 && \
-  apt-get update -q --fix-missing && apt-get -y upgrade fail2ban && \
   apt-get autoclean && rm -rf /var/lib/apt/lists/* && \
   rm -rf /usr/share/locale/* && rm -rf /usr/share/man/* && rm -rf /usr/share/doc/*
 
@@ -99,9 +97,9 @@ RUN sed -i -r "/^#?compress/c\compress\ncopytruncate" /etc/logrotate.conf && \
   sed -i -r 's|/var/log/clamav|/var/log/mail|g' /etc/logrotate.d/clamav-freshclam && \
   sed -i -r 's|/var/log/mail|/var/log/mail/mail|g' /etc/logrotate.d/rsyslog
 
-# Get LetsEncrypt signed certificate
-RUN curl -s https://letsencrypt.org/certs/lets-encrypt-x1-cross-signed.pem > /etc/ssl/certs/lets-encrypt-x1-cross-signed.pem && \
-  curl -s https://letsencrypt.org/certs/lets-encrypt-x2-cross-signed.pem > /etc/ssl/certs/lets-encrypt-x2-cross-signed.pem
+# Get LetsEncrypt signed certificate (updated for modern certificates)
+RUN curl -s https://letsencrypt.org/certs/isrgrootx1.pem > /etc/ssl/certs/isrgrootx1.pem && \
+  curl -s https://letsencrypt.org/certs/lets-encrypt-r3.pem > /etc/ssl/certs/lets-encrypt-r3.pem
 
 COPY ./target/bin /usr/local/bin
 # Start-mailserver script
