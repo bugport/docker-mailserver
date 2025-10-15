@@ -1,4 +1,33 @@
 services:
+  reverse-proxy:
+    image: docker.io/traefik:latest
+    container_name: reverse-proxy
+    # CAUTION: In production, secure Docker API access for Traefik
+    # https://doc.traefik.io/traefik/providers/docker/#docker-api-access
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command:
+      # Docker provider config
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      # DMS ports to proxy (TCP entrypoints)
+      - --entryPoints.mail-smtp.address=:25
+      - --entryPoints.mail-submission.address=:587
+      - --entryPoints.mail-submissions.address=:465
+      - --entryPoints.mail-imap.address=:143
+      - --entryPoints.mail-imaps.address=:993
+    # Publish external access ports mapped to Traefik entrypoints
+    ports:
+      - "25:25"
+      - "587:587"
+      - "465:465"
+      - "143:143"
+      - "993:993"
+    networks:
+      default:
+        ipv4_address: 172.16.42.2
+    restart: always
+
   mailserver:
     image: ghcr.io/docker-mailserver/docker-mailserver:latest
     container_name: mailserver
@@ -7,12 +36,38 @@ services:
     env_file: mailserver.env
     # More information about the mail-server ports:
     # https://docker-mailserver.github.io/docker-mailserver/latest/config/security/understanding-the-ports/
-    ports:
-      - "25:25"    # SMTP  (explicit TLS => STARTTLS, Authentication is DISABLED => use port 465/587 instead)
-      - "143:143"  # IMAP4 (explicit TLS => STARTTLS)
-      - "465:465"  # ESMTP (implicit TLS)
-      - "587:587"  # ESMTP (explicit TLS => STARTTLS)
-      - "993:993"  # IMAP4 (implicit TLS)
+    labels:
+      - traefik.enable=true
+      # SMTP (25) via PROXY-protocol variant 12525
+      - traefik.tcp.routers.mail-smtp.rule=HostSNI(`*`)
+      - traefik.tcp.routers.mail-smtp.entrypoints=mail-smtp
+      - traefik.tcp.routers.mail-smtp.service=mail-smtp
+      - traefik.tcp.services.mail-smtp.loadbalancer.server.port=12525
+      - traefik.tcp.services.mail-smtp.loadbalancer.proxyProtocol.version=2
+      # Submission (587) via PROXY-protocol variant 10587
+      - traefik.tcp.routers.mail-submission.rule=HostSNI(`*`)
+      - traefik.tcp.routers.mail-submission.entrypoints=mail-submission
+      - traefik.tcp.routers.mail-submission.service=mail-submission
+      - traefik.tcp.services.mail-submission.loadbalancer.server.port=10587
+      - traefik.tcp.services.mail-submission.loadbalancer.proxyProtocol.version=2
+      # Submissions (465) via PROXY-protocol variant 10465 (implicit TLS)
+      - traefik.tcp.routers.mail-submissions.rule=HostSNI(`*`)
+      - traefik.tcp.routers.mail-submissions.entrypoints=mail-submissions
+      - traefik.tcp.routers.mail-submissions.service=mail-submissions
+      - traefik.tcp.services.mail-submissions.loadbalancer.server.port=10465
+      - traefik.tcp.services.mail-submissions.loadbalancer.proxyProtocol.version=2
+      # IMAP (143) via PROXY-protocol variant 10143
+      - traefik.tcp.routers.mail-imap.rule=HostSNI(`*`)
+      - traefik.tcp.routers.mail-imap.entrypoints=mail-imap
+      - traefik.tcp.routers.mail-imap.service=mail-imap
+      - traefik.tcp.services.mail-imap.loadbalancer.server.port=10143
+      - traefik.tcp.services.mail-imap.loadbalancer.proxyProtocol.version=2
+      # IMAPS (993) via PROXY-protocol variant 10993 (implicit TLS)
+      - traefik.tcp.routers.mail-imaps.rule=HostSNI(`*`)
+      - traefik.tcp.routers.mail-imaps.entrypoints=mail-imaps
+      - traefik.tcp.routers.mail-imaps.service=mail-imaps
+      - traefik.tcp.services.mail-imaps.loadbalancer.server.port=10993
+      - traefik.tcp.services.mail-imaps.loadbalancer.proxyProtocol.version=2
     volumes:
       - ./docker-data/dms/mail-data/:/var/mail/
       - ./docker-data/dms/mail-state/:/var/mail-state/
@@ -38,3 +93,10 @@ services:
     volumes:
       - ./docker-data/caldav/collections:/var/lib/radicale/collections
     restart: always
+
+networks:
+  default:
+    name: mail-network
+    ipam:
+      config:
+        - subnet: "172.16.42.0/24"
