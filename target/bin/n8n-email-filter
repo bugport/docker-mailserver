@@ -1,0 +1,126 @@
+#!/bin/bash
+
+# n8n Email Filter Script
+# This script processes emails through n8n workflow filtering
+
+set -e
+
+# Configuration
+N8N_WEBHOOK_URL="${N8N_WEBHOOK_URL:-http://n8n:5678/webhook/email-filter}"
+TIMEOUT="${N8N_TIMEOUT:-10}"
+LOG_FILE="/var/log/n8n-email-filter.log"
+
+# Logging function
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE"
+}
+
+# Function to send email to n8n for filtering
+filter_email() {
+    local email_file="$1"
+    local temp_file="/tmp/email_$(date +%s).json"
+    
+    # Convert email to JSON format for n8n
+    {
+        echo "{"
+        echo "  \"message_id\": \"$(grep -i '^message-id:' "$email_file" | cut -d' ' -f2- | tr -d '\r\n')\","
+        echo "  \"from\": \"$(grep -i '^from:' "$email_file" | cut -d' ' -f2- | tr -d '\r\n')\","
+        echo "  \"to\": \"$(grep -i '^to:' "$email_file" | cut -d' ' -f2- | tr -d '\r\n')\","
+        echo "  \"subject\": \"$(grep -i '^subject:' "$email_file" | cut -d' ' -f2- | tr -d '\r\n')\","
+        echo "  \"date\": \"$(grep -i '^date:' "$email_file" | cut -d' ' -f2- | tr -d '\r\n')\","
+        echo "  \"headers\": {"
+        
+        # Extract spam headers
+        local spam_score=$(grep -i '^x-spam-score:' "$email_file" | cut -d' ' -f2- | tr -d '\r\n' || echo "0")
+        local spam_status=$(grep -i '^x-spam-status:' "$email_file" | cut -d' ' -f2- | tr -d '\r\n' || echo "No")
+        local spam_level=$(grep -i '^x-spam-level:' "$email_file" | cut -d' ' -f2- | tr -d '\r\n' || echo "0")
+        
+        echo "    \"x-spam-score\": \"$spam_score\","
+        echo "    \"x-spam-status\": \"$spam_status\","
+        echo "    \"x-spam-level\": \"$spam_level\""
+        echo "  },"
+        echo "  \"body\": \"$(cat "$email_file" | base64 -w 0)\""
+        echo "}"
+    } > "$temp_file"
+    
+    # Send to n8n webhook
+    local response
+    if response=$(curl -s -w "%{http_code}" -X POST \
+        -H "Content-Type: application/json" \
+        -d @"$temp_file" \
+        --connect-timeout "$TIMEOUT" \
+        --max-time "$TIMEOUT" \
+        "$N8N_WEBHOOK_URL" 2>/dev/null); then
+        
+        local http_code="${response: -3}"
+        local response_body="${response%???}"
+        
+        log "HTTP Response Code: $http_code"
+        log "Response Body: $response_body"
+        
+        # Parse response
+        local action=$(echo "$response_body" | jq -r '.action // "accept"' 2>/dev/null || echo "accept")
+        local reason=$(echo "$response_body" | jq -r '.reason // "default"' 2>/dev/null || echo "default")
+        
+        log "Action: $action, Reason: $reason"
+        
+        # Clean up temp file
+        rm -f "$temp_file"
+        
+        case "$action" in
+            "accept")
+                log "Email accepted: $reason"
+                return 0
+                ;;
+            "reject")
+                log "Email rejected: $reason"
+                return 1
+                ;;
+            "quarantine")
+                log "Email quarantined: $reason"
+                # Move to quarantine folder
+                mkdir -p /var/mail/quarantine
+                cp "$email_file" "/var/mail/quarantine/$(basename "$email_file")_$(date +%s)"
+                return 0
+                ;;
+            *)
+                log "Unknown action: $action, defaulting to accept"
+                return 0
+                ;;
+        esac
+    else
+        log "Failed to connect to n8n webhook, defaulting to accept"
+        rm -f "$temp_file"
+        return 0
+    fi
+}
+
+# Main execution
+if [ $# -ne 1 ]; then
+    echo "Usage: $0 <email_file>"
+    exit 1
+fi
+
+email_file="$1"
+
+if [ ! -f "$email_file" ]; then
+    log "Error: Email file not found: $email_file"
+    exit 1
+fi
+
+log "Processing email: $email_file"
+
+# Check if n8n filtering is enabled
+if [ "${ENABLE_N8N_FILTER:-0}" != "1" ]; then
+    log "N8N filtering disabled, accepting email"
+    exit 0
+fi
+
+# Process email through n8n filter
+if filter_email "$email_file"; then
+    log "Email processing completed successfully"
+    exit 0
+else
+    log "Email processing failed"
+    exit 1
+fi
