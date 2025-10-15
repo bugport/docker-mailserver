@@ -28,3 +28,13 @@ services:
       test: "ss --listening --ipv4 --tcp | grep --silent ':smtp' || exit 1"
       timeout: 3s
       retries: 0
+
+  caldav:
+    image: radicale/radicale:latest
+    container_name: caldav
+    # CalDAV/CardDAV server (Radicale)
+    ports:
+      - "5232:5232"  # CalDAV/CardDAV (Radicale)
+    volumes:
+      - ./docker-data/caldav/collections:/var/lib/radicale/collections
+    restart: always
