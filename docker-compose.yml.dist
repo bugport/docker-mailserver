@@ -16,9 +16,34 @@ services:
     - ./config/:/tmp/docker-mailserver/
     environment:
     - ENABLE_FAIL2BAN=1
+    - ENABLE_N8N_FILTER=1
+    - N8N_WEBHOOK_URL=http://n8n:5678/webhook/email-filter
     cap_add:
     - NET_ADMIN
+    depends_on:
+    - n8n
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n
+    ports:
+    - "5678:5678"
+    volumes:
+    - n8n_data:/home/node/.n8n
+    - ./n8n-workflows:/home/node/.n8n/workflows
+    environment:
+    - N8N_BASIC_AUTH_ACTIVE=true
+    - N8N_BASIC_AUTH_USER=admin
+    - N8N_BASIC_AUTH_PASSWORD=admin123
+    - N8N_HOST=0.0.0.0
+    - N8N_PORT=5678
+    - N8N_PROTOCOL=http
+    - WEBHOOK_URL=http://n8n:5678/
+    - GENERIC_TIMEZONE=UTC
+    restart: unless-stopped
 
 volumes:
   maildata:
+    driver: local
+  n8n_data:
     driver: local

@@ -1,0 +1,248 @@
+{
+  "name": "Email Filter Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "email-filter",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Email Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "email-filter-webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "spam-check",
+              "leftValue": "={{ $json.headers['x-spam-score'] }}",
+              "rightValue": "5",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "spam-filter",
+      "name": "Spam Filter",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "sender-domain-check",
+              "leftValue": "={{ $json.from }}",
+              "rightValue": "trusted-domain.com",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "trusted-sender",
+      "name": "Trusted Sender Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "subject-keywords",
+              "leftValue": "={{ $json.subject }}",
+              "rightValue": "urgent,important,priority",
+              "operator": {
+                "type": "string",
+                "operation": "regex"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "priority-filter",
+      "name": "Priority Filter",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"action\": \"accept\", \"reason\": \"trusted_sender\", \"original_message\": $json } }}",
+        "options": {}
+      },
+      "id": "accept-trusted",
+      "name": "Accept Trusted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"action\": \"accept\", \"reason\": \"priority_message\", \"original_message\": $json } }}",
+        "options": {}
+      },
+      "id": "accept-priority",
+      "name": "Accept Priority",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"action\": \"reject\", \"reason\": \"spam_detected\", \"spam_score\": $json.headers['x-spam-score'], \"original_message\": $json } }}",
+        "options": {}
+      },
+      "id": "reject-spam",
+      "name": "Reject Spam",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [680, 500]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"action\": \"quarantine\", \"reason\": \"untrusted_sender\", \"original_message\": $json } }}",
+        "options": {}
+      },
+      "id": "quarantine-untrusted",
+      "name": "Quarantine Untrusted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"action\": \"accept\", \"reason\": \"default_accept\", \"original_message\": $json } }}",
+        "options": {}
+      },
+      "id": "default-accept",
+      "name": "Default Accept",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 500]
+    }
+  ],
+  "connections": {
+    "Email Webhook": {
+      "main": [
+        [
+          {
+            "node": "Spam Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Spam Filter": {
+      "main": [
+        [
+          {
+            "node": "Reject Spam",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Trusted Sender Check",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Priority Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trusted Sender Check": {
+      "main": [
+        [
+          {
+            "node": "Accept Trusted",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Quarantine Untrusted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Priority Filter": {
+      "main": [
+        [
+          {
+            "node": "Accept Priority",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Default Accept",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "email-filter-workflow",
+  "tags": []
+}
