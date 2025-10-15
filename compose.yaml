@@ -34,6 +34,13 @@ services:
     # Provide the FQDN of your mail server here (Your DNS MX record should point to this value)
     hostname: mail.example.com
     env_file: mailserver.env
+    environment:
+      # Centralized user management via LDAP
+      - ACCOUNT_PROVISIONER=LDAP
+      - LDAP_SERVER_HOST=ldap://ldap
+      - LDAP_SEARCH_BASE=dc=example,dc=com
+      - LDAP_BIND_DN=cn=admin,dc=example,dc=com
+      - LDAP_BIND_PW=admin
     # More information about the mail-server ports:
     # https://docker-mailserver.github.io/docker-mailserver/latest/config/security/understanding-the-ports/
     labels:
@@ -74,6 +81,8 @@ services:
       - ./docker-data/dms/mail-logs/:/var/log/mail/
       - ./docker-data/dms/config/:/tmp/docker-mailserver/
       - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      - ldap
     restart: always
     stop_grace_period: 1m
     # Uncomment if using `ENABLE_FAIL2BAN=1`:
@@ -92,6 +101,24 @@ services:
       - "5232:5232"  # CalDAV/CardDAV (Radicale)
     volumes:
       - ./docker-data/caldav/collections:/var/lib/radicale/collections
+      # Optional: provide a Radicale config that authenticates against DMS via IMAP (central auth)
+      # Create ./docker-data/caldav/config with appropriate settings if desired, then uncomment:
+      # - ./docker-data/caldav/config:/etc/radicale/config:ro
+    restart: always
+
+  ldap:
+    image: docker.io/bitnami/openldap:latest
+    container_name: ldap
+    environment:
+      - LDAP_ROOT=dc=example,dc=com
+      - LDAP_ADMIN_PASSWORD=admin
+      - LDAP_ALLOW_ANON_BINDING=no
+      - LDAP_PORT_NUMBER=389
+    volumes:
+      - ./docker-data/openldap:/bitnami/openldap
+      # Optional: seed directory/tree and schema on first run by providing LDIF/Schema files:
+      # - ./docker-data/openldap/ldifs:/ldifs:ro
+      # - ./docker-data/openldap/schemas:/schemas:ro
     restart: always
 
 networks:
